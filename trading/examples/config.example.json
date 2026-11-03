@@ -1,0 +1,19 @@
+{
+  "broker": "paper",
+  "tickers": ["SPY", "QQQ", "AAPL"],
+  "trade_start": "09:45",
+  "trade_end": "15:45",
+  "account_size": 25000,
+  "risk_per_trade_pct": 1.0,
+  "max_daily_loss_pct": 3.0,
+  "max_open_positions": 3,
+  "max_trades_per_day": 10,
+  "min_reward_risk": 1.5,
+  "target_r_multiple": 2.0,
+  "decider": "rules",
+  "news_events": [
+    {"name": "FOMC rate decision", "at": "2026-11-04T14:00:00"},
+    {"name": "CPI", "at": "2026-11-12T08:30:00"},
+    {"name": "AAPL earnings", "at": "2026-10-29T16:30:00", "ticker": "AAPL"}
+  ]
+}
