@@ -37,6 +37,37 @@ that breaks one becomes a HOLD, and the journal records it as a blocked proposal
 Two extra safeguards: the entry price is always reset to the live price (the model can't invent
 one), and there is no re-entry on the same bar where a stop or target filled.
 
+## Website (dashboard)
+
+```bash
+python -m trading serve            # then open http://127.0.0.1:8000
+```
+
+A browser dashboard on top of the same engine, using only the standard library. Set the risk
+rules, strategy, decider and news calendar in the left panel, then run a paper session on a
+demo day or on your own CSV. Results include P&L, win rate, blocked proposals and rule
+violations, plus:
+
+- Price charts with VWAP, EMA 9/21, entries, exits and stop/target levels
+- An equity curve
+- A trades table and a filterable decision log that shows why each proposal was blocked or adjusted
+- The end-of-day summary, downloadable as JSON
+- The exact Claude prompt your settings produce
+
+It works on phones and follows the system's light/dark setting.
+
+The website **only simulates**. It forces PAPER mode even if a request sends `live: true`.
+It listens on `127.0.0.1` by default and has no login, so put it behind authentication before
+using `--host 0.0.0.0`. Files: `web/server.py` (JSON API) and `web/static/` (HTML/CSS/JS, no
+build step and no external requests).
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/config` | Server defaults |
+| `POST /api/run` | `{config, source: "demo"\|"csv", seed, csv}` → summaries, bar series, decisions |
+| `POST /api/prompt` | Rendered system prompt for a config |
+| `GET /api/logs`, `/api/logs/YYYY-MM-DD` | Journals written by the CLI or a live process |
+
 ## Quick start
 
 ```bash
@@ -44,7 +75,8 @@ python -m trading demo                     # replay a synthetic session (rules d
 python -m trading prompt                   # show the rendered Claude system prompt
 python -m trading replay --csv bars.csv    # replay your own 5-min bars
 python -m trading summary trading_logs/2026-11-03.jsonl
-python -m unittest discover -s trading -t .   # 35 tests, stdlib only
+python -m trading serve                    # web dashboard at http://127.0.0.1:8000
+python -m unittest discover -s trading -t .   # 44 tests, stdlib only
 ```
 
 The `rules` decider only needs the Python standard library. The Claude deciders need

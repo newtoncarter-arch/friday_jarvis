@@ -160,6 +160,11 @@ class TradingConfig:
         if "LIVE" in env:  # the spec's literal switch
             raw["live"] = env["LIVE"]
 
+        return cls.from_dict(raw)
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "TradingConfig":
+        """Build and validate a config from plain JSON-style values (unknown keys ignored)."""
         kwargs: dict = {}
         for f in fields(cls):
             if f.name not in raw:

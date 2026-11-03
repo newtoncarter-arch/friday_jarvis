@@ -4,6 +4,7 @@
     python -m trading demo     [--config cfg.json] [--seed N]  # replay a synthetic day (paper)
     python -m trading replay   --csv bars.csv [--config cfg.json]
     python -m trading summary  trading_logs/2026-11-03.jsonl [--config cfg.json]
+    python -m trading serve    [--port 8000]                 # web dashboard (paper only)
 
 CSV format (5-minute bars, any number of tickers/days, timestamps = bar close):
     timestamp,ticker,open,high,low,close,volume
@@ -24,7 +25,7 @@ from pathlib import Path
 from .config import ET, TradingConfig
 from .engine import TradingAssistant
 from .indicators import Bar, build_snapshot
-from .journal import format_summary, load_records, summarize
+from .journal import Journal, format_summary, load_records, summarize
 from .prompts import build_system_prompt
 
 
@@ -46,11 +47,18 @@ def read_bars(path: str | Path) -> list[tuple[str, Bar]]:
     return rows
 
 
-def replay(config: TradingConfig, rows: list[tuple[str, Bar]], verbose: bool = True) -> list[dict]:
+def replay(
+    config: TradingConfig,
+    rows: list[tuple[str, Bar]],
+    verbose: bool = True,
+    on_cycle=None,
+    log_dir: str | None = None,
+) -> list[dict]:
     """Feed bars through the assistant in time order; returns one summary per session."""
     if config.live:
         raise SystemExit("Replay is a simulation and never runs with LIVE=true.")
-    assistant = TradingAssistant(config)
+    journal = Journal(config, log_dir) if log_dir else None
+    assistant = TradingAssistant(config, journal=journal)
     history: dict[str, list[Bar]] = defaultdict(list)
     summaries = []
     current_day = None
@@ -69,6 +77,8 @@ def replay(config: TradingConfig, rows: list[tuple[str, Bar]], verbose: bool = T
             continue
         was_halted = assistant.account.halted
         decision = assistant.on_snapshot(snap, now=bar.timestamp)
+        if on_cycle:
+            on_cycle(ticker, bar, snap, decision, was_halted)
         if verbose and decision.action.value != "HOLD" and not was_halted:
             print(f"{bar.timestamp.astimezone(ET):%Y-%m-%d %H:%M} {json.dumps(decision.to_dict())}")
 
@@ -98,6 +108,9 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("--csv", required=True)
     sm = sub.add_parser("summary")
     sm.add_argument("log")
+    sv = sub.add_parser("serve", help="web dashboard (paper only)")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
@@ -113,6 +126,10 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "replay":
         print(f"[{config.mode}] replaying {args.csv}, decider={config.decider}")
         replay(config, read_bars(args.csv))
+    elif args.cmd == "serve":
+        from .web.server import serve
+
+        serve(config, args.host, args.port)
     elif args.cmd == "summary":
         print(format_summary(summarize(load_records(args.log), config)))
     return 0

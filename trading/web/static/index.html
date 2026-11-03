@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Intraday Trading Assistant</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-5 4 4 8-9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Intraday Trading Assistant</span>
+    </div>
+    <span class="badge badge-paper" title="The website only runs simulations. Live trading is never enabled here.">PAPER</span>
+  </header>
+
+  <div class="layout">
+    <!-- ============ Settings ============ -->
+    <aside class="panel settings" aria-label="Settings">
+      <form id="config-form" novalidate>
+        <details open>
+          <summary>Market</summary>
+          <label>Platform <input name="broker" type="text"></label>
+          <label>Tickers <input name="tickers" type="text" placeholder="SPY, QQQ, AAPL"></label>
+          <div class="row2">
+            <label>Start (ET) <input name="trade_start" type="time"></label>
+            <label>End (ET) <input name="trade_end" type="time"></label>
+          </div>
+          <label>News blackout (min) <input name="news_blackout_minutes" type="number" min="0" max="60"></label>
+        </details>
+
+        <details open>
+          <summary>Risk rules</summary>
+          <label>Account size ($) <input name="account_size" type="number" min="1" step="100"></label>
+          <div class="row2">
+            <label>Risk / trade (%) <input name="risk_per_trade_pct" type="number" step="0.1" min="0.1" max="5"></label>
+            <label>Max daily loss (%) <input name="max_daily_loss_pct" type="number" step="0.5" min="0.5" max="20"></label>
+          </div>
+          <div class="row2">
+            <label>Max open positions <input name="max_open_positions" type="number" min="1" max="20"></label>
+            <label>Max trades / day <input name="max_trades_per_day" type="number" min="1" max="100"></label>
+          </div>
+          <div class="row2">
+            <label>Min reward:risk <input name="min_reward_risk" type="number" step="0.1" min="1"></label>
+            <label>Target (R) <input name="target_r_multiple" type="number" step="0.1" min="1"></label>
+          </div>
+          <label class="check"><input name="allow_short" type="checkbox"> Allow short selling</label>
+        </details>
+
+        <details>
+          <summary>Strategy</summary>
+          <div class="row2">
+            <label>Swing lookback (bars) <input name="swing_lookback" type="number" min="2" max="50"></label>
+            <label>Volume lookback (bars) <input name="volume_lookback" type="number" min="2" max="100"></label>
+          </div>
+          <label>Description (sent to Claude)
+            <textarea name="strategy_description" rows="6"></textarea>
+          </label>
+        </details>
+
+        <details>
+          <summary>Decision maker</summary>
+          <fieldset class="segmented" role="radiogroup" aria-label="Decider">
+            <label><input type="radio" name="decider" value="rules"> Rules</label>
+            <label><input type="radio" name="decider" value="consensus"> Consensus</label>
+            <label><input type="radio" name="decider" value="claude"> Claude</label>
+          </fieldset>
+          <p class="hint">Claude modes need the <code>anthropic</code> package and an API key on the server. Every decision still passes the risk rules.</p>
+        </details>
+
+        <details>
+          <summary>News events</summary>
+          <p class="hint">One per line: <code>2026-11-04T14:00 FOMC</code>. Add a ticker for earnings: <code>2026-11-03T11:00 AAPL earnings @AAPL</code></p>
+          <textarea name="news_events" rows="4" spellcheck="false"></textarea>
+        </details>
+      </form>
+
+      <div class="run-box">
+        <fieldset class="segmented" role="radiogroup" aria-label="Data source">
+          <label><input type="radio" name="source" value="demo" checked> Demo day</label>
+          <label><input type="radio" name="source" value="csv"> Upload CSV</label>
+        </fieldset>
+        <div id="demo-opts">
+          <label>Random seed <span class="seed-row"><input id="seed" type="number" value="7" min="0"><button type="button" id="reseed" class="ghost" title="New random day">↻</button></span></label>
+        </div>
+        <div id="csv-opts" hidden>
+          <label class="file">
+            <input id="csv" type="file" accept=".csv,text/csv">
+            <span id="csv-name">Choose 5-min bars CSV…</span>
+          </label>
+          <p class="hint"><code>timestamp,ticker,open,high,low,close,volume</code></p>
+        </div>
+        <button id="run" class="primary" type="button">Run paper session</button>
+        <p id="form-error" class="error" role="alert" hidden></p>
+      </div>
+    </aside>
+
+    <!-- ============ Results ============ -->
+    <main class="results" aria-live="polite">
+      <section id="empty" class="panel empty">
+        <h1>Paper-trade your rules before risking money</h1>
+        <p>Set your risk rules on the left, then run a session. Every proposal goes through the same code-enforced checks the CLI uses: 1% sizing, daily loss stop, time windows, stop and target required, no averaging down.</p>
+        <button class="primary" type="button" data-run>Run the demo day</button>
+      </section>
+
+      <div id="loading" class="panel loading" hidden><span class="spinner"></span> Running session…</div>
+
+      <div id="output" hidden>
+        <section class="cards" id="cards"></section>
+
+        <nav class="tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-tab="charts">Charts</button>
+          <button role="tab" aria-selected="false" data-tab="trades">Trades</button>
+          <button role="tab" aria-selected="false" data-tab="log">Decision log</button>
+          <button role="tab" aria-selected="false" data-tab="summary">Summary</button>
+          <button role="tab" aria-selected="false" data-tab="prompt">Prompt</button>
+        </nav>
+
+        <section class="panel tab" id="tab-charts">
+          <div class="chart-head">
+            <div class="ticker-pills" id="ticker-pills"></div>
+            <div class="legend">
+              <span><i class="sw sw-price"></i>Price</span>
+              <span><i class="sw sw-vwap"></i>VWAP</span>
+              <span><i class="sw sw-ema9"></i>EMA 9</span>
+              <span><i class="sw sw-ema21"></i>EMA 21</span>
+              <span><i class="mk mk-long"></i>Long</span>
+              <span><i class="mk mk-short"></i>Short</span>
+              <span><i class="mk mk-exit"></i>Exit</span>
+            </div>
+          </div>
+          <div class="chart-wrap"><svg id="chart" role="img" aria-label="Price chart"></svg><div id="tip" class="tip" hidden></div></div>
+          <h3 class="sub">Equity through the session</h3>
+          <div class="chart-wrap small"><svg id="equity" role="img" aria-label="Equity curve"></svg></div>
+        </section>
+
+        <section class="panel tab" id="tab-trades" hidden>
+          <div class="table-wrap"><table id="trades"></table></div>
+        </section>
+
+        <section class="panel tab" id="tab-log" hidden>
+          <div class="filters">
+            <fieldset class="segmented" role="radiogroup" aria-label="Filter">
+              <label><input type="radio" name="logfilter" value="actions" checked> Actions</label>
+              <label><input type="radio" name="logfilter" value="blocked"> Blocked</label>
+              <label><input type="radio" name="logfilter" value="all"> Everything</label>
+            </fieldset>
+            <select id="log-ticker" aria-label="Ticker"></select>
+          </div>
+          <div class="table-wrap"><table id="log"></table></div>
+        </section>
+
+        <section class="panel tab" id="tab-summary" hidden>
+          <div id="violations"></div>
+          <pre id="summary-text"></pre>
+          <button type="button" class="ghost" id="download">Download session JSON</button>
+        </section>
+
+        <section class="panel tab" id="tab-prompt" hidden>
+          <p class="hint">The system prompt Claude receives, with your settings filled in.</p>
+          <pre id="prompt-text"></pre>
+          <button type="button" class="ghost" id="copy-prompt">Copy prompt</button>
+        </section>
+      </div>
+      <p class="disclaimer">Simulation only. Not financial advice. Fills are idealized (no slippage, gaps, or partial fills).</p>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
